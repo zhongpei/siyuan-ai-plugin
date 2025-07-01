@@ -22,16 +22,21 @@ import {
 } from "siyuan";
 import "./index.scss";
 import {IMenuItem} from "siyuan/types";
+import { AIService } from "./ai-service";
+import { SettingsManager } from "./settings-manager";
+import { TextProcessor } from "./text-processor";
 
 const STORAGE_NAME = "menu-config";
 const TAB_TYPE = "custom_tab";
 const DOCK_TYPE = "dock_tab";
 
-export default class PluginSample extends Plugin {
+export default class SiYuanAIAssistant extends Plugin {
 
     private custom: () => Custom;
     private isMobile: boolean;
     private blockIconEventBindThis = this.blockIconEvent.bind(this);
+    private aiService: AIService;
+    private settingsManager: SettingsManager;
 
     updateProtyleToolbar(toolbar: Array<string | IMenuItem>) {
         toolbar.push("|");
@@ -51,19 +56,28 @@ export default class PluginSample extends Plugin {
     onload() {
         this.data[STORAGE_NAME] = {readonlyText: "Readonly"};
 
+        // 初始化AI服务
+        this.settingsManager = new SettingsManager(this);
+        this.aiService = new AIService();
+        this.initializeAIService();
+
         const frontEnd = getFrontend();
         this.isMobile = frontEnd === "mobile" || frontEnd === "browser-mobile";
-        // 图标的制作参见帮助文档
+        
+        // 添加AI相关图标
         this.addIcons(`<symbol id="iconFace" viewBox="0 0 32 32">
 <path d="M13.667 17.333c0 0.92-0.747 1.667-1.667 1.667s-1.667-0.747-1.667-1.667 0.747-1.667 1.667-1.667 1.667 0.747 1.667 1.667zM20 15.667c-0.92 0-1.667 0.747-1.667 1.667s0.747 1.667 1.667 1.667 1.667-0.747 1.667-1.667-0.747-1.667-1.667-1.667zM29.333 16c0 7.36-5.973 13.333-13.333 13.333s-13.333-5.973-13.333-13.333 5.973-13.333 13.333-13.333 13.333 5.973 13.333 13.333zM14.213 5.493c1.867 3.093 5.253 5.173 9.12 5.173 0.613 0 1.213-0.067 1.787-0.16-1.867-3.093-5.253-5.173-9.12-5.173-0.613 0-1.213 0.067-1.787 0.16zM5.893 12.627c2.28-1.293 4.040-3.4 4.88-5.92-2.28 1.293-4.040 3.4-4.88 5.92zM26.667 16c0-1.040-0.16-2.040-0.44-2.987-0.933 0.2-1.893 0.32-2.893 0.32-4.173 0-7.893-1.92-10.347-4.92-1.4 3.413-4.187 6.093-7.653 7.4 0.013 0.053 0 0.12 0 0.187 0 5.88 4.787 10.667 10.667 10.667s10.667-4.787 10.667-10.667z"></path>
 </symbol>
 <symbol id="iconSaving" viewBox="0 0 32 32">
 <path d="M20 13.333c0-0.733 0.6-1.333 1.333-1.333s1.333 0.6 1.333 1.333c0 0.733-0.6 1.333-1.333 1.333s-1.333-0.6-1.333-1.333zM10.667 12h6.667v-2.667h-6.667v2.667zM29.333 10v9.293l-3.76 1.253-2.24 7.453h-7.333v-2.667h-2.667v2.667h-7.333c0 0-3.333-11.28-3.333-15.333s3.28-7.333 7.333-7.333h6.667c1.213-1.613 3.147-2.667 5.333-2.667 1.107 0 2 0.893 2 2 0 0.28-0.053 0.533-0.16 0.773-0.187 0.453-0.347 0.973-0.427 1.533l3.027 3.027h2.893zM26.667 12.667h-1.333l-4.667-4.667c0-0.867 0.12-1.72 0.347-2.547-1.293 0.333-2.347 1.293-2.787 2.547h-8.227c-2.573 0-4.667 2.093-4.667 4.667 0 2.507 1.627 8.867 2.68 12.667h2.653v-2.667h8v2.667h2.68l2.067-6.867 3.253-1.093v-4.707z"></path>
+</symbol>
+<symbol id="iconAI" viewBox="0 0 32 32">
+<path d="M16 2C8.268 2 2 8.268 2 16s6.268 14 14 14 14-6.268 14-14S23.732 2 16 2zm0 2c6.627 0 12 5.373 12 12s-5.373 12-12 12S4 22.627 4 16 9.373 4 16 4zm-1 4v8h-4l5 6 5-6h-4V8h-2z"></path>
 </symbol>`);
 
         const topBarElement = this.addTopBar({
-            icon: "iconFace",
-            title: this.i18n.addTopBarIcon,
+            icon: "iconAI",
+            title: this.i18n.aiAssistant,
             position: "right",
             callback: () => {
                 if (this.isMobile) {
@@ -127,6 +141,71 @@ export default class PluginSample extends Plugin {
             hotkey: "⇧⌘M",
             globalCallback: () => {
                 console.log(this.getOpenedTab());
+            },
+        });
+
+        // 添加AI相关命令
+        this.addCommand({
+            langKey: "improveWriting",
+            hotkey: "⇧⌘I",
+            callback: () => {
+                this.handleImproveWriting();
+            },
+        });
+
+        this.addCommand({
+            langKey: "continueWriting", 
+            hotkey: "⇧⌘C",
+            callback: () => {
+                this.handleContinueWriting();
+            },
+        });
+
+        this.addCommand({
+            langKey: "fixGrammar",
+            hotkey: "⇧⌘G",
+            callback: () => {
+                this.handleFixGrammar();
+            },
+        });
+
+        this.addCommand({
+            langKey: "summarizeText",
+            hotkey: "⇧⌘S",
+            callback: () => {
+                this.handleSummarizeText();
+            },
+        });
+
+        this.addCommand({
+            langKey: "translateText",
+            hotkey: "⇧⌘T",
+            callback: () => {
+                this.handleTranslateText();
+            },
+        });
+
+        this.addCommand({
+            langKey: "changeTone",
+            hotkey: "⇧⌘D",
+            callback: () => {
+                this.handleChangeTone();
+            },
+        });
+
+        this.addCommand({
+            langKey: "simplifyText",
+            hotkey: "⇧⌘F",
+            callback: () => {
+                this.handleSimplifyText();
+            },
+        });
+
+        this.addCommand({
+            langKey: "brainstorm",
+            hotkey: "⇧⌘B",
+            callback: () => {
+                this.handleBrainstorm();
             },
         });
         this.addDock({
@@ -865,5 +944,491 @@ export default class PluginSample extends Plugin {
             return;
         }
         return editors[0];
+    }
+
+    /**
+     * 初始化AI服务
+     */
+    private async initializeAIService() {
+        const settings = await this.settingsManager.getSettings();
+        this.aiService.updateConfig({
+            apiKey: settings.apiKey,
+            baseUrl: settings.baseUrl,
+            model: settings.model,
+            maxTokens: settings.maxTokens,
+            temperature: settings.temperature
+        });
+    }
+
+    /**
+     * 处理文本改进
+     */
+    private async handleImproveWriting() {
+        const selectedText = TextProcessor.getSelectedText();
+        if (!selectedText) {
+            showMessage("请先选中要改进的文本", 3000, "error");
+            return;
+        }
+
+        showMessage("正在改进文本...", 3000, "info");
+        
+        try {
+            const result = await this.aiService.improveWriting(selectedText);
+            if (result.success && result.data) {
+                TextProcessor.replaceSelectedText(result.data);
+                showMessage("文本改进完成", 3000, "info");
+            } else {
+                showMessage(`改进失败: ${result.error}`, 5000, "error");
+            }
+        } catch (error) {
+            showMessage(`改进失败: ${error}`, 5000, "error");
+        }
+    }
+
+    /**
+     * 处理续写功能
+     */
+    private async handleContinueWriting() {
+        const selectedText = TextProcessor.getSelectedText();
+        if (!selectedText) {
+            const blockId = TextProcessor.getCurrentBlockId();
+            if (!blockId) {
+                showMessage("请选中文本或将光标置于要续写的块中", 3000, "error");
+                return;
+            }
+            
+            const blockInfo = await TextProcessor.getBlockContent(blockId);
+            if (!blockInfo) {
+                showMessage("无法获取当前块内容", 3000, "error");
+                return;
+            }
+            
+            showMessage("正在续写内容...", 3000, "info");
+            
+            try {
+                const result = await this.aiService.continueWriting(TextProcessor.cleanText(blockInfo.content));
+                if (result.success && result.data) {
+                    // 在当前块后插入续写内容
+                    await TextProcessor.insertBlockAfter(blockId, result.data);
+                    showMessage("续写完成", 3000, "info");
+                } else {
+                    showMessage(`续写失败: ${result.error}`, 5000, "error");
+                }
+            } catch (error) {
+                showMessage(`续写失败: ${error}`, 5000, "error");
+            }
+        } else {
+            showMessage("正在续写内容...", 3000, "info");
+            
+            try {
+                const result = await this.aiService.continueWriting(selectedText);
+                if (result.success && result.data) {
+                    TextProcessor.insertTextAtCursor("\n" + result.data);
+                    showMessage("续写完成", 3000, "info");
+                } else {
+                    showMessage(`续写失败: ${result.error}`, 5000, "error");
+                }
+            } catch (error) {
+                showMessage(`续写失败: ${error}`, 5000, "error");
+            }
+        }
+    }
+
+    /**
+     * 处理语法检查
+     */
+    private async handleFixGrammar() {
+        const selectedText = TextProcessor.getSelectedText();
+        if (!selectedText) {
+            showMessage("请先选中要检查的文本", 3000, "error");
+            return;
+        }
+
+        showMessage("正在检查语法...", 3000, "info");
+        
+        try {
+            const result = await this.aiService.fixGrammar(selectedText);
+            if (result.success && result.data) {
+                TextProcessor.replaceSelectedText(result.data);
+                showMessage("语法检查完成", 3000, "info");
+            } else {
+                showMessage(`检查失败: ${result.error}`, 5000, "error");
+            }
+        } catch (error) {
+            showMessage(`检查失败: ${error}`, 5000, "error");
+        }
+    }
+
+    /**
+     * 处理文本摘要
+     */
+    private async handleSummarizeText() {
+        const selectedText = TextProcessor.getSelectedText();
+        if (!selectedText) {
+            const blockId = TextProcessor.getCurrentBlockId();
+            if (!blockId) {
+                showMessage("请选中文本或将光标置于要摘要的块中", 3000, "error");
+                return;
+            }
+            
+            const blockInfo = await TextProcessor.getBlockContent(blockId);
+            if (!blockInfo) {
+                showMessage("无法获取当前块内容", 3000, "error");
+                return;
+            }
+            
+            showMessage("正在生成摘要...", 3000, "info");
+            
+            try {
+                const result = await this.aiService.summarizeText(TextProcessor.cleanText(blockInfo.content));
+                if (result.success && result.data) {
+                    // 在当前块后插入摘要内容
+                    await TextProcessor.insertBlockAfter(blockId, `**摘要：** ${result.data}`);
+                    showMessage("摘要生成完成", 3000, "info");
+                } else {
+                    showMessage(`摘要生成失败: ${result.error}`, 5000, "error");
+                }
+            } catch (error) {
+                showMessage(`摘要生成失败: ${error}`, 5000, "error");
+            }
+        } else {
+            showMessage("正在生成摘要...", 3000, "info");
+            
+            try {
+                const result = await this.aiService.summarizeText(selectedText);
+                if (result.success && result.data) {
+                    TextProcessor.insertTextAtCursor(`\n**摘要：** ${result.data}`);
+                    showMessage("摘要生成完成", 3000, "info");
+                } else {
+                    showMessage(`摘要生成失败: ${result.error}`, 5000, "error");
+                }
+            } catch (error) {
+                showMessage(`摘要生成失败: ${error}`, 5000, "error");
+            }
+        }
+    }
+
+    /**
+     * 处理翻译功能
+     */
+    private async handleTranslateText() {
+        const selectedText = TextProcessor.getSelectedText();
+        if (!selectedText) {
+            showMessage("请先选中要翻译的文本", 3000, "error");
+            return;
+        }
+
+        const settings = await this.settingsManager.getSettings();
+        showMessage("正在翻译文本...", 3000, "info");
+        
+        try {
+            const result = await this.aiService.translateText(selectedText, settings.defaultLanguage);
+            if (result.success && result.data) {
+                TextProcessor.insertTextAtCursor(`\n**翻译：** ${result.data}`);
+                showMessage("翻译完成", 3000, "info");
+            } else {
+                showMessage(`翻译失败: ${result.error}`, 5000, "error");
+            }
+        } catch (error) {
+            showMessage(`翻译失败: ${error}`, 5000, "error");
+        }
+    }
+
+    /**
+     * 处理语气转换
+     */
+    private async handleChangeTone() {
+        const selectedText = TextProcessor.getSelectedText();
+        if (!selectedText) {
+            showMessage("请先选中要转换语气的文本", 3000, "error");
+            return;
+        }
+
+        // 显示语气选择对话框
+        this.showToneSelectionDialog(selectedText);
+    }
+
+    /**
+     * 显示语气选择对话框
+     */
+    private showToneSelectionDialog(text: string) {
+        const dialog = new Dialog({
+            title: "选择语气风格",
+            content: `
+                <div class="b3-dialog__content">
+                    <div class="b3-form">
+                        <div class="b3-form__item">
+                            <label class="b3-form__label">选择目标语气：</label>
+                            <select id="tone-select" class="b3-select fn__block">
+                                <option value="formal">正式</option>
+                                <option value="casual">轻松</option>
+                                <option value="professional">专业</option>
+                                <option value="friendly">友好</option>
+                                <option value="confident">自信</option>
+                                <option value="academic">学术</option>
+                                <option value="creative">创意</option>
+                            </select>
+                        </div>
+                        <div class="b3-form__item">
+                            <button id="tone-convert-btn" class="b3-button b3-button--text">转换语气</button>
+                            <button id="tone-cancel-btn" class="b3-button b3-button--cancel">取消</button>
+                        </div>
+                    </div>
+                </div>
+            `,
+            width: "400px"
+        });
+
+        // 绑定事件
+        dialog.element.querySelector("#tone-convert-btn")?.addEventListener("click", async () => {
+            const tone = (dialog.element.querySelector("#tone-select") as HTMLSelectElement).value;
+            const btn = dialog.element.querySelector("#tone-convert-btn") as HTMLButtonElement;
+            const originalText = btn.textContent;
+            
+            btn.textContent = "转换中...";
+            btn.disabled = true;
+
+            try {
+                const result = await this.aiService.changeTone(text, tone);
+                if (result.success && result.data) {
+                    TextProcessor.replaceSelectedText(result.data);
+                    showMessage("语气转换完成", 3000, "info");
+                    dialog.destroy();
+                } else {
+                    showMessage(`语气转换失败: ${result.error}`, 5000, "error");
+                }
+            } catch (error) {
+                showMessage(`语气转换失败: ${error}`, 5000, "error");
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        });
+
+        dialog.element.querySelector("#tone-cancel-btn")?.addEventListener("click", () => {
+            dialog.destroy();
+        });
+    }
+
+    /**
+     * 处理文本简化
+     */
+    private async handleSimplifyText() {
+        const selectedText = TextProcessor.getSelectedText();
+        if (!selectedText) {
+            showMessage("请先选中要简化的文本", 3000, "error");
+            return;
+        }
+
+        showMessage("正在简化文本...", 3000, "info");
+        
+        try {
+            const result = await this.aiService.simplifyText(selectedText);
+            if (result.success && result.data) {
+                TextProcessor.replaceSelectedText(result.data);
+                showMessage("文本简化完成", 3000, "info");
+            } else {
+                showMessage(`文本简化失败: ${result.error}`, 5000, "error");
+            }
+        } catch (error) {
+            showMessage(`文本简化失败: ${error}`, 5000, "error");
+        }
+    }
+
+    /**
+     * 处理头脑风暴
+     */
+    private async handleBrainstorm() {
+        // 显示主题输入对话框
+        this.showBrainstormDialog();
+    }
+
+    /**
+     * 显示头脑风暴对话框
+     */
+    private showBrainstormDialog() {
+        const dialog = new Dialog({
+            title: "头脑风暴",
+            content: `
+                <div class="b3-dialog__content">
+                    <div class="b3-form">
+                        <div class="b3-form__item">
+                            <label class="b3-form__label">请输入头脑风暴的主题：</label>
+                            <input id="brainstorm-topic" class="b3-text-field fn__block" placeholder="例如：如何提高工作效率">
+                        </div>
+                        <div class="b3-form__item">
+                            <button id="brainstorm-generate-btn" class="b3-button b3-button--text">生成创意</button>
+                            <button id="brainstorm-cancel-btn" class="b3-button b3-button--cancel">取消</button>
+                        </div>
+                    </div>
+                </div>
+            `,
+            width: "500px"
+        });
+
+        // 绑定事件
+        dialog.element.querySelector("#brainstorm-generate-btn")?.addEventListener("click", async () => {
+            const topic = (dialog.element.querySelector("#brainstorm-topic") as HTMLInputElement).value.trim();
+            if (!topic) {
+                showMessage("请输入头脑风暴主题", 2000, "error");
+                return;
+            }
+
+            const btn = dialog.element.querySelector("#brainstorm-generate-btn") as HTMLButtonElement;
+            const originalText = btn.textContent;
+            
+            btn.textContent = "生成中...";
+            btn.disabled = true;
+
+            try {
+                const result = await this.aiService.brainstorm(topic);
+                if (result.success && result.data) {
+                    const blockId = TextProcessor.getCurrentBlockId();
+                    if (blockId) {
+                        await TextProcessor.insertBlockAfter(blockId, `**${topic} - 头脑风暴结果：**\n\n${result.data}`);
+                    } else {
+                        TextProcessor.insertTextAtCursor(`\n**${topic} - 头脑风暴结果：**\n\n${result.data}`);
+                    }
+                    showMessage("头脑风暴完成", 3000, "info");
+                    dialog.destroy();
+                } else {
+                    showMessage(`头脑风暴失败: ${result.error}`, 5000, "error");
+                }
+            } catch (error) {
+                showMessage(`头脑风暴失败: ${error}`, 5000, "error");
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        });
+
+        dialog.element.querySelector("#brainstorm-cancel-btn")?.addEventListener("click", () => {
+            dialog.destroy();
+        });
+
+        // 自动聚焦输入框
+        setTimeout(() => {
+            (dialog.element.querySelector("#brainstorm-topic") as HTMLInputElement)?.focus();
+        }, 100);
+    }
+
+    /**
+     * 添加AI菜单
+     */
+    private addAIMenu(rect?: DOMRect): Menu {
+        const menu = new Menu("ai-assistant-menu");
+        
+        menu.addItem({
+            icon: "iconEdit",
+            label: this.i18n.improveWriting,
+            click: () => {
+                this.handleImproveWriting();
+            }
+        });
+
+        menu.addItem({
+            icon: "iconSpell",
+            label: this.i18n.fixGrammar,
+            click: () => {
+                this.handleFixGrammar();
+            }
+        });
+
+        menu.addItem({
+            icon: "iconAdd",
+            label: this.i18n.continueWriting,
+            click: () => {
+                this.handleContinueWriting();
+            }
+        });
+
+        menu.addSeparator();
+
+        menu.addItem({
+            icon: "iconSparkles",
+            label: this.i18n.summarizeText,
+            click: () => {
+                this.handleSummarizeText();
+            }
+        });
+
+        menu.addItem({
+            icon: "iconTranslate",
+            label: this.i18n.translateText,
+            click: () => {
+                this.handleTranslateText();
+            }
+        });
+
+        menu.addItem({
+            icon: "iconVoice",
+            label: this.i18n.changeTone,
+            click: () => {
+                this.handleChangeTone();
+            }
+        });
+
+        menu.addItem({
+            icon: "iconFont",
+            label: this.i18n.simplifyText,
+            click: () => {
+                this.handleSimplifyText();
+            }
+        });
+
+        menu.addSeparator();
+
+        menu.addItem({
+            icon: "iconLightning",
+            label: this.i18n.brainstorm,
+            click: () => {
+                this.handleBrainstorm();
+            }
+        });
+
+        menu.addSeparator();
+
+        menu.addItem({
+            icon: "iconSettings",
+            label: "设置",
+            click: () => {
+                this.openSettings();
+            }
+        });
+
+        if (rect) {
+            menu.open({
+                x: rect.right,
+                y: rect.bottom,
+                isLeft: true
+            });
+        } else {
+            menu.open({
+                x: window.innerWidth / 2,
+                y: window.innerHeight / 2
+            });
+        }
+
+        return menu;
+    }
+
+    /**
+     * 打开设置对话框
+     */
+    private openSettings() {
+        const dialog = new Dialog({
+            title: "AI助手设置",
+            content: `<div class="b3-dialog__content">${this.settingsManager.createSettingsHTML()}</div>`,
+            width: "640px",
+            destroyCallback: () => {
+                // 设置关闭时重新初始化AI服务
+                this.initializeAIService();
+            }
+        });
+
+        // 绑定设置事件
+        this.settingsManager.bindSettingsEvents(dialog.element, () => {
+            showMessage("设置已保存", 2000, "info");
+        });
     }
 }
